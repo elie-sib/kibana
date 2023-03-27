@@ -10,6 +10,7 @@ import { css } from '@emotion/react';
 import React, { createContext, useContext, useMemo } from 'react';
 import type { SearchHit } from '@kbn/es-types';
 import { EuiFlexItem, EuiLoadingSpinner } from '@elastic/eui';
+import type { EcsSecurityExtension as Ecs } from '@kbn/securitysolution-ecs';
 import { useTimelineEventsDetails } from '../../timelines/containers/details';
 import { getAlertIndexAlias } from '../../timelines/components/side_panel/event_details/helpers';
 import { useSpaceId } from '../../common/hooks/use_space_id';
@@ -29,9 +30,17 @@ export interface RightPanelContext {
    */
   indexName: string;
   /**
+   * Maintain backwards compatibility // TODO remove when possible
+   */
+  scopeId: string;
+  /**
    * An object containing fields by type
    */
   browserFields: BrowserFields | null;
+  /**
+   *
+   */
+  dataAsNestedObject: Ecs | null;
   /**
    * An array of field objects with category and value
    */
@@ -40,6 +49,10 @@ export interface RightPanelContext {
    * The actual raw document object
    */
   searchHit: SearchHit<object> | undefined;
+  /**
+   *
+   */
+  refetchFlyoutData: () => Promise<void>;
 }
 
 export const RightPanelContext = createContext<RightPanelContext | undefined>(undefined);
@@ -51,7 +64,12 @@ export type RightPanelProviderProps = {
   children: React.ReactNode;
 } & Partial<RightPanelProps['params']>;
 
-export const RightPanelProvider = ({ id, indexName, children }: RightPanelProviderProps) => {
+export const RightPanelProvider = ({
+  id,
+  indexName,
+  scopeId,
+  children,
+}: RightPanelProviderProps) => {
   const currentSpaceId = useSpaceId();
   const eventIndex = indexName ? getAlertIndexAlias(indexName, currentSpaceId) ?? indexName : '';
   const [{ pageName }] = useRouteSpy();
@@ -60,25 +78,38 @@ export const RightPanelProvider = ({ id, indexName, children }: RightPanelProvid
       ? SourcererScopeName.detections
       : SourcererScopeName.default;
   const sourcererDataView = useSourcererDataView(sourcererScope);
-  const [loading, dataFormattedForFieldBrowser, searchHit] = useTimelineEventsDetails({
-    indexName: eventIndex,
-    eventId: id ?? '',
-    runtimeMappings: sourcererDataView.runtimeMappings,
-    skip: !id,
-  });
+  const [loading, dataFormattedForFieldBrowser, searchHit, dataAsNestedObject, refetchFlyoutData] =
+    useTimelineEventsDetails({
+      indexName: eventIndex,
+      eventId: id ?? '',
+      runtimeMappings: sourcererDataView.runtimeMappings,
+      skip: !id,
+    });
 
   const contextValue = useMemo(
     () =>
-      id && indexName
+      id && indexName && scopeId
         ? {
             eventId: id,
             indexName,
+            scopeId,
             browserFields: sourcererDataView.browserFields,
+            dataAsNestedObject: dataAsNestedObject as unknown as Ecs,
             dataFormattedForFieldBrowser,
             searchHit: searchHit as SearchHit<object>,
+            refetchFlyoutData,
           }
         : undefined,
-    [id, indexName, sourcererDataView.browserFields, dataFormattedForFieldBrowser, searchHit]
+    [
+      id,
+      indexName,
+      scopeId,
+      sourcererDataView.browserFields,
+      dataAsNestedObject,
+      dataFormattedForFieldBrowser,
+      searchHit,
+      refetchFlyoutData,
+    ]
   );
 
   if (loading) {
